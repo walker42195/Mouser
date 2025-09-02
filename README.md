@@ -1,4 +1,4 @@
-#Mouser
+# Mouser
 
 A program that keeps your screen and computer active (Windows).
 
