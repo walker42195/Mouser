@@ -1,4 +1,4 @@
-A program that keeps your screen and computer active.
+A program that keeps your screen and computer active (Windows).
 
 No installation, download Mouser.exe and place in a folder.
 Add optional icons to the same folder and rename them:
