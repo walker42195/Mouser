@@ -183,7 +183,7 @@ idle_img = None
 # Huvudlogik: använder GetLastInputInfo, försöker keyboard först, sedan synlig musrörelse
 def keep_awake(icon: Icon):
     global running, active
-    wake_threshold = 35.0  # sekunder
+    wake_threshold = 15.0  # sekunder
     check_interval = 5.0
 
     while running:
@@ -194,8 +194,8 @@ def keep_awake(icon: Icon):
 
             if not active:
                 # Programmet är inaktivt, visa idle-ikon men gör inget
-                if idle_img and icon.icon != idle_img:
-                    icon.icon = idle_img
+                if idle_img and icon.icon != active_img:
+                    icon.icon = active_img
             else:
                 if idle_s < 1.0:
                     # aktiv
