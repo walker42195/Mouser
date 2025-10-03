@@ -8,6 +8,9 @@ import winreg
 from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw
 
+active = True  # styr om programmet ska hålla datorn vaken
+
+
 # Funktion för att hitta rätt sökväg för filer när programmet körs som .exe
 def resource_path(relative_path):
     try:
@@ -179,7 +182,7 @@ idle_img = None
 
 # Huvudlogik: använder GetLastInputInfo, försöker keyboard först, sedan synlig musrörelse
 def keep_awake(icon: Icon):
-    global running
+    global running, active
     wake_threshold = 35.0  # sekunder
     check_interval = 5.0
 
@@ -189,31 +192,42 @@ def keep_awake(icon: Icon):
             idle_s = idle_ms / 1000.0
             print(f"Inaktiv tid enligt GetLastInputInfo: {idle_s:.1f} sek", flush=True)
 
-            if idle_s < 1.0:
-                # aktiv
-                if active_img and icon.icon != active_img:
-                    icon.icon = active_img
-            elif idle_s >= wake_threshold:
-                # Försök först tangenttryckning (osynlig)
-                success = send_shift_via_sendinput()
-                if not success:
-                    # fallback: synlig musrörelse (då du vill se den)
-                    success = send_input_move_smooth(pixels=50, steps=10, delay=0.02)
-                else:
-                    # även om shift lyckades, gör ändå en synlig liten rörelse om du vill se det
-                    success_move = send_input_move_smooth(pixels=20, steps=6, delay=0.02)
-                    success = success or success_move
-
-                if success:
-                    print("Håller datorn vaken - skickade input", flush=True)
-
+            if not active:
+                # Programmet är inaktivt, visa idle-ikon men gör inget
                 if idle_img and icon.icon != idle_img:
                     icon.icon = idle_img
+            else:
+                if idle_s < 1.0:
+                    # aktiv
+                    if active_img and icon.icon != active_img:
+                        icon.icon = active_img
+                elif idle_s >= wake_threshold:
+                    # Försök först tangenttryckning (osynlig)
+                    success = send_shift_via_sendinput()
+                    if not success:
+                        # fallback: synlig musrörelse (då du vill se den)
+                        success = send_input_move_smooth(pixels=50, steps=10, delay=0.02)
+                    else:
+                        # även om shift lyckades, gör ändå en synlig liten rörelse om du vill se det
+                        success_move = send_input_move_smooth(pixels=20, steps=6, delay=0.02)
+                        success = success or success_move
+
+                    if success:
+                        print("Håller datorn vaken - skickade input", flush=True)
+
+                    if idle_img and icon.icon != idle_img:
+                        icon.icon = idle_img
 
         except Exception as e:
             print(f"Fel i keep_awake: {e}", flush=True)
 
         time.sleep(check_interval)
+
+
+def toggle_active(icon, item):
+    global active
+    active = not active
+    icon.menu = create_menu()  # uppdatera menytexten
 
 def on_quit(icon, item):
     global running
@@ -229,7 +243,9 @@ def toggle_autostart(icon, item):
 def create_menu():
     autostart_enabled = is_autostart_enabled()
     autostart_text = "✓ Starta med Windows" if autostart_enabled else "Starta med Windows"
+    active_text = "✓ Aktiv" if active else "Inaktiv"
     return Menu(
+        MenuItem(active_text, toggle_active),
         MenuItem(autostart_text, toggle_autostart),
         MenuItem("Avsluta", on_quit)
     )
