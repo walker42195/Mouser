@@ -193,6 +193,8 @@ def keep_awake(icon: Icon):
     global running, active
     wake_threshold = 15.0  # sekunder
     check_interval = 5.0
+    we_sent_input = False  # Flag för att veta om det var vi som skickade senaste input
+    previous_idle = 0  # Tidigare idle-tid
 
     while running:
         try:
@@ -209,12 +211,19 @@ def keep_awake(icon: Icon):
                 continue  # KRITISK FIX: hoppa över resten av loopen
             
             # Programmet är aktivt - hantera ikoner och wake-logic
-            if idle_s < wake_threshold:
-                # Användaren är aktiv eller vi precis skickat input
+            
+            # Kolla om användaren verkligen är aktiv
+            # Om idle_s är mycket större än tidigare = användaren har varit inaktiv hela tiden
+            # Om idle_s är mycket mindre än tidigare OCH vi inte skickade input = användaren blev aktiv
+            if idle_s < 1.0 and not we_sent_input:
+                # Användaren är verkligen aktiv (idle nollställdes av riktig aktivitet)
                 if active_img and icon.icon != active_img:
                     icon.icon = active_img
-                    print("Ikon ändrad till aktiv", flush=True)
-            else:
+                    print("Ikon ändrad till aktiv (användaren aktiv)", flush=True)
+            elif idle_s < wake_threshold and we_sent_input:
+                # Vi skickade nyss input, behåll idle-ikon tills användaren är riktig aktiv
+                pass
+            elif idle_s >= wake_threshold:
                 # Inaktivitetstid har passerat tröskeln - visa idle-ikon och skicka input
                 if idle_img and icon.icon != idle_img:
                     icon.icon = idle_img
@@ -227,12 +236,21 @@ def keep_awake(icon: Icon):
                 success2 = send_input_move_smooth(pixels=50, steps=10, delay=0.02)
                 success = success1 or success2
                 
+                # Markera att vi just skickade input
+                we_sent_input = success
+                
                 if success1:
                     print("✓ Skickade Shift-tangent", flush=True)
                 if success2:
                     print("✓ Skickade musrörelse", flush=True)
                 if not success:
                     print("✗ Kunde inte skicka någon input", flush=True)
+            
+            # Nollställ flag om idle-tiden ökar (betyder att vår input är "glömd")
+            if idle_s > previous_idle + 1.0:
+                we_sent_input = False
+            
+            previous_idle = idle_s
 
         except Exception as e:
             print(f"Fel i keep_awake: {e}", flush=True)
