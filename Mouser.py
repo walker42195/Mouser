@@ -116,19 +116,27 @@ def send_input_move_smooth(pixels=50, steps=10, delay=0.02):
 def send_shift_via_sendinput():
     try:
         extra = ctypes.c_void_p(0)
-        inp_down = INPUT()
-        inp_down.type = 1  # INPUT_KEYBOARD
-        inp_down.ki = KEYBDINPUT(0x10, 0, 0, 0, extra)  # VK_SHIFT down
-        inp_up = INPUT()
-        inp_up.type = 1
-        inp_up.ki = KEYBDINPUT(0x10, 0, 0x0002, 0, extra)  # KEYEVENTF_KEYUP
+        
+        # Skapa två INPUT-strukturer: en för nedtryckning, en för uppåt
+        inputs = (INPUT * 2)()
+        
+        # Shift ned
+        inputs[0].type = 1  # INPUT_KEYBOARD
+        inputs[0].ki = KEYBDINPUT(0x10, 0, 0, 0, extra)  # VK_SHIFT down
+        
+        # Shift upp
+        inputs[1].type = 1
+        inputs[1].ki = KEYBDINPUT(0x10, 0, 0x0002, 0, extra)  # KEYEVENTF_KEYUP
 
-        n = ctypes.windll.user32.SendInput(2, ctypes.byref(inp_down), ctypes.sizeof(INPUT))
-        if n != 2:
-            # Försök skicka separat om inte båda gick igenom
-            ctypes.windll.user32.SendInput(1, ctypes.byref(inp_down), ctypes.sizeof(INPUT))
-        ctypes.windll.user32.SendInput(1, ctypes.byref(inp_up), ctypes.sizeof(INPUT))
-        return True
+        # Skicka båda events
+        result = ctypes.windll.user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
+        
+        if result == 2:
+            return True
+        else:
+            print(f"SendInput returnerade {result}, förväntat 2", flush=True)
+            return False
+            
     except Exception as e:
         print(f"Fel vid send_shift_via_sendinput: {e}", flush=True)
         return False
@@ -190,33 +198,48 @@ def keep_awake(icon: Icon):
         try:
             idle_ms = get_idle_msecs()
             idle_s = idle_ms / 1000.0
-            print(f"Inaktiv tid enligt GetLastInputInfo: {idle_s:.1f} sek", flush=True)
+            print(f"Inaktiv tid enligt GetLastInputInfo: {idle_s:.1f} sek (Active: {active})", flush=True)
 
             if not active:
-                # Programmet är inaktivt, visa idle-ikon men gör inget
-                if idle_img and icon.icon != active_img:
+                # Programmet är inaktivt, visa idle-ikon och gör inget
+                if idle_img and icon.icon != idle_img:
+                    icon.icon = idle_img
+                    print("Ikon ändrad till idle (programmet inaktiverat)", flush=True)
+                time.sleep(check_interval)
+                continue  # KRITISK FIX: hoppa över resten av loopen
+            
+            # Programmet är aktivt - hantera ikoner och wake-logic
+            if idle_s < wake_threshold:
+                # Användaren är aktiv eller vi precis skickat input
+                if active_img and icon.icon != active_img:
                     icon.icon = active_img
+                    print("Ikon ändrad till aktiv", flush=True)
             else:
-                if idle_s < 1.0:
-                    # aktiv
-                    if active_img and icon.icon != active_img:
-                        icon.icon = active_img
-                elif idle_s >= wake_threshold:
-                    # Försök först tangenttryckning (osynlig)
-                    success = send_shift_via_sendinput()
-                    if not success:
-                        # fallback: synlig musrörelse (då du vill se den)
-                        success = send_input_move_smooth(pixels=50, steps=10, delay=0.02)
-                    else:
-                        # även om shift lyckades, gör ändå en synlig liten rörelse om du vill se det
-                        success_move = send_input_move_smooth(pixels=20, steps=6, delay=0.02)
-                        success = success or success_move
-
+                # Inaktivitetstid har passerat tröskeln - skicka input
+                print(f"Inaktiv i {idle_s:.1f}s - skickar input...", flush=True)
+                
+                # Försök först osynlig tangentinput (Shift)
+                success = send_shift_via_sendinput()
+                
+                if success:
+                    print("✓ Skickade Shift-tangent", flush=True)
+                else:
+                    # Fallback: synlig musrörelse
+                    print("⚠ Shift misslyckades, försöker musrörelse...", flush=True)
+                    success = send_input_move_smooth(pixels=50, steps=10, delay=0.02)
                     if success:
-                        print("Håller datorn vaken - skickade input", flush=True)
-
-                    if idle_img and icon.icon != idle_img:
-                        icon.icon = idle_img
+                        print("✓ Skickade musrörelse", flush=True)
+                    else:
+                        print("✗ Kunde inte skicka någon input", flush=True)
+                
+                # Vänta lite extra efter input innan vi byter ikon
+                time.sleep(0.5)
+                
+                # Efter att ha skickat input, sätt ikonen till aktiv
+                # (eftersom vi just återställt idle-timer)
+                if active_img and icon.icon != active_img:
+                    icon.icon = active_img
+                    print("Ikon ändrad till aktiv (efter input)", flush=True)
 
         except Exception as e:
             print(f"Fel i keep_awake: {e}", flush=True)
@@ -227,10 +250,15 @@ def keep_awake(icon: Icon):
 def toggle_active(icon, item):
     global active
     active = not active
-    icon.menu = create_menu()  # uppdatera menytexten
+    status = "AKTIVERAT" if active else "INAKTIVERAT"
+    print(f"\n{'='*50}", flush=True)
+    print(f"Program {status} av användaren", flush=True)
+    print(f"{'='*50}\n", flush=True)
+    icon.menu = create_menu()
 
 def on_quit(icon, item):
     global running
+    print("Avslutar programmet...", flush=True)
     running = False
     icon.stop()
 
@@ -256,13 +284,17 @@ def load_icons():
     idle_icon_path = resource_path("idle.ico")
     try:
         active_img = Image.open(active_icon_path).convert("RGBA").resize((32, 32))
+        print("✓ Laddade active.ico", flush=True)
     except:
+        print("⚠ Kunde inte ladda active.ico, skapar standardikon", flush=True)
         active_img = Image.new('RGBA', (32, 32), (255, 255, 255, 0))
         draw = ImageDraw.Draw(active_img)
         draw.ellipse([4, 4, 28, 28], fill=(0, 255, 0, 255), outline=(0, 200, 0, 255), width=2)
     try:
         idle_img = Image.open(idle_icon_path).convert("RGBA").resize((32, 32))
+        print("✓ Laddade idle.ico", flush=True)
     except:
+        print("⚠ Kunde inte ladda idle.ico, skapar standardikon", flush=True)
         idle_img = Image.new('RGBA', (32, 32), (255, 255, 255, 0))
         draw = ImageDraw.Draw(idle_img)
         draw.ellipse([4, 4, 28, 28], fill=(255, 0, 0, 255), outline=(200, 0, 0, 255), width=2)
@@ -270,7 +302,7 @@ def load_icons():
 def main():
     global running
 
-    # Skapa loggfil i samma katalog som programmet — öppna här för att fånga utskrifter
+    # Skapa loggfil i samma katalog som programmet
     log_path = os.path.join(os.path.dirname(get_exe_path()), "mouser.log")
     try:
         logfile = open(log_path, "a", encoding="utf-8")
@@ -279,7 +311,10 @@ def main():
     except Exception:
         pass
 
-    print("Startar Mouser program...", flush=True)
+    print(f"\n{'='*60}", flush=True)
+    print(f"Mouser startat - {time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
+    print(f"{'='*60}\n", flush=True)
+    
     load_icons()
     menu = create_menu()
     icon = Icon("KeepAwake", active_img, "Mouser - Håller datorn vaken", menu)
@@ -287,11 +322,14 @@ def main():
     def setup(icon):
         icon.visible = True
         icon.menu = create_menu()
+        print("✓ Systemfältsikon visas", flush=True)
+        print("✓ Övervakningstrå startar\n", flush=True)
         threading.Thread(target=keep_awake, args=(icon,), daemon=True).start()
 
     try:
         icon.run(setup=setup)
     except KeyboardInterrupt:
+        print("\nAvbruten av användaren (Ctrl+C)", flush=True)
         running = False
     finally:
         try:
