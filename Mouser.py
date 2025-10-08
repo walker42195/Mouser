@@ -215,7 +215,11 @@ def keep_awake(icon: Icon):
                     icon.icon = active_img
                     print("Ikon ändrad till aktiv", flush=True)
             else:
-                # Inaktivitetstid har passerat tröskeln - skicka input
+                # Inaktivitetstid har passerat tröskeln - visa idle-ikon och skicka input
+                if idle_img and icon.icon != idle_img:
+                    icon.icon = idle_img
+                    print("Ikon ändrad till idle (datorn inaktiv)", flush=True)
+                
                 print(f"Inaktiv i {idle_s:.1f}s - skickar input...", flush=True)
                 
                 # Skicka både tangent och musrörelse för maximal pålitlighet
@@ -229,15 +233,6 @@ def keep_awake(icon: Icon):
                     print("✓ Skickade musrörelse", flush=True)
                 if not success:
                     print("✗ Kunde inte skicka någon input", flush=True)
-                
-                # Vänta lite extra efter input innan vi byter ikon
-                time.sleep(0.5)
-                
-                # Efter att ha skickat input, sätt ikonen till aktiv
-                # (eftersom vi just återställt idle-timer)
-                if active_img and icon.icon != active_img:
-                    icon.icon = active_img
-                    print("Ikon ändrad till aktiv (efter input)", flush=True)
 
         except Exception as e:
             print(f"Fel i keep_awake: {e}", flush=True)
