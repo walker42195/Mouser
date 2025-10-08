@@ -218,19 +218,17 @@ def keep_awake(icon: Icon):
                 # Inaktivitetstid har passerat tröskeln - skicka input
                 print(f"Inaktiv i {idle_s:.1f}s - skickar input...", flush=True)
                 
-                # Försök först osynlig tangentinput (Shift)
-                success = send_shift_via_sendinput()
+                # Skicka både tangent och musrörelse för maximal pålitlighet
+                success1 = send_shift_via_sendinput()
+                success2 = send_input_move_smooth(pixels=50, steps=10, delay=0.02)
+                success = success1 or success2
                 
-                if success:
+                if success1:
                     print("✓ Skickade Shift-tangent", flush=True)
-                else:
-                    # Fallback: synlig musrörelse
-                    print("⚠ Shift misslyckades, försöker musrörelse...", flush=True)
-                    success = send_input_move_smooth(pixels=50, steps=10, delay=0.02)
-                    if success:
-                        print("✓ Skickade musrörelse", flush=True)
-                    else:
-                        print("✗ Kunde inte skicka någon input", flush=True)
+                if success2:
+                    print("✓ Skickade musrörelse", flush=True)
+                if not success:
+                    print("✗ Kunde inte skicka någon input", flush=True)
                 
                 # Vänta lite extra efter input innan vi byter ikon
                 time.sleep(0.5)
